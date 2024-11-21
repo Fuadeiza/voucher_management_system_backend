@@ -152,16 +152,3 @@ Authorization: Bearer <your_token>
 alembic revision --autogenerate -m "description"
 alembic upgrade head
 ```
-
-### Running Tests
-```bash
-pytest
-```
-
-## License
-
-[Your License]
-
-## Contributors
-
-[Your Name]
