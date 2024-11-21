@@ -4,7 +4,7 @@ from app.core.database import get_db
 from app.core.security import get_current_admin
 from app.models import models
 from app.schemas import schemas
-from typing import List
+from typing import List, Dict
 from uuid import UUID
 import random
 import string
@@ -18,55 +18,97 @@ def generate_voucher_code(company_acronym: str, length: int = 6) -> str:
     random_str = ''.join(random.choice(chars) for _ in range(length))
     return f"{company_acronym}-{random_str}"
 
-@router.post("/create", response_model=schemas.Voucher)
+
+@router.get("/stats")
+async def get_voucher_stats(
+    db: Session = Depends(get_db),
+    current_admin: models.Admin = Depends(get_current_admin)
+):
+    """Get overall voucher statistics"""
+    try:
+        print("Fetching voucher stats") # Debug log
+        
+        # Get total vouchers
+        total_vouchers = db.query(models.Voucher).count()
+        print(f"Total vouchers: {total_vouchers}")
+
+        # Get active vouchers
+        active_vouchers = db.query(models.Voucher).filter(
+            models.Voucher.status == "active"
+        ).count()
+        print(f"Active vouchers: {active_vouchers}")
+
+        # Get used vouchers
+        used_vouchers = db.query(models.Voucher).filter(
+            models.Voucher.status == "used"
+        ).count()
+        print(f"Used vouchers: {used_vouchers}")
+
+        stats = {
+            "total": total_vouchers,
+            "active": active_vouchers,
+            "used": used_vouchers
+        }
+        print(f"Returning stats: {stats}")
+        return stats
+    
+    except Exception as e:
+        print(f"Error getting voucher stats: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error fetching voucher statistics: {str(e)}"
+        )
+
+@router.post("/create", response_model=List[schemas.Voucher])  # Change response model to List
 async def create_voucher(
     request: Request,
     db: Session = Depends(get_db),
     current_admin: models.Admin = Depends(get_current_admin)
 ):
     """
-    Create a new voucher for a company.
+    Create one or more vouchers for a company.
 
     Parameters:
-    - **company_id**: UUID of the company for which to create the voucher
+    - **company_id**: UUID of the company
+    - **count**: Number of vouchers to create (default: 1, max: 100)
     
     Returns:
-    - **Voucher**: Created voucher object with auto-generated code
-    
-    The voucher code will be automatically generated using the company's acronym
-    and a random string, e.g., "FB-12ABC4"
-    
-    Requirements:
-    * Must be authenticated as admin
-    * Company must exist
-    * Company acronym must be set
+    - List of created voucher objects
     """
     body = await request.json()
-    company_id = body.get("company_id") 
-    try:
-        company_uuid = UUID(company_id)
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid company ID format")
+    company_id = body.get("company_id")
+    count = body.get("count", 1)
     
-    # Check if company exists
-    company = db.query(models.Company).filter(models.Company.id == company_uuid).first()
+    if count < 1 or count > 5000:  # Limit to 100 vouchers per request
+        raise HTTPException(status_code=400, detail="Count must be between 1 and 5000")
+    
+    # Verify company exists
+    company = db.query(models.Company).filter(models.Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
     
-    # Generate unique voucher code
-    code = generate_voucher_code(company.acronym)
-    while db.query(models.Voucher).filter(models.Voucher.code == code).first():
+    created_vouchers = []
+    for _ in range(count):
         code = generate_voucher_code(company.acronym)
-        
-    db_voucher = models.Voucher(
-        code=code,
-        company_id=company_uuid,
-        created_by=current_admin.id
-    )
-    db.add(db_voucher)
-    db.commit()
-    db.refresh(db_voucher)
-    return db_voucher
+        while db.query(models.Voucher).filter(models.Voucher.code == code).first():
+            code = generate_voucher_code(company.acronym)
+            
+        db_voucher = models.Voucher(
+            code=code,
+            company_id=company_id,
+            created_by=current_admin.id
+        )
+        db.add(db_voucher)
+        created_vouchers.append(db_voucher)
+    
+    try:
+        db.commit()
+        for voucher in created_vouchers:
+            db.refresh(voucher)
+        return created_vouchers
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/", response_model=List[schemas.Voucher])
 async def get_vouchers(

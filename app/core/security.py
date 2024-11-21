@@ -40,19 +40,29 @@ def get_current_admin(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        token = credentials.credentials
         payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        admin_id: str = payload.get("admin_id")
-        if email is None or admin_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
+        if email is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+            )
         
-    admin = db.query(models.Admin).filter(
-        models.Admin.email == email,
-        models.Admin.id == UUID(admin_id)
-    ).first()
-    
-    if admin is None:
-        raise credentials_exception
-    return admin
+        # Add debug logging
+        print(f"Token payload: {payload}")
+        print(f"Looking for admin with email: {email}")
+        
+        admin = db.query(models.Admin).filter(models.Admin.email == email).first()
+        if admin is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Admin not found",
+            )
+        return admin
+    except JWTError as e:
+        print(f"JWT Error: {str(e)}")  # Debug log
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+        )

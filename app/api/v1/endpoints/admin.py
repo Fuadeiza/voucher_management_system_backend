@@ -9,7 +9,7 @@ from uuid import UUID
 
 router = APIRouter()
 
-@router.post("/login")
+@router.post("/login", status_code=200)
 async def login(request: Request, db: Session = Depends(get_db)):
     """
     Authenticate admin user and generate access token.
@@ -26,27 +26,27 @@ async def login(request: Request, db: Session = Depends(get_db)):
     Use the returned access token in the Authorization header for protected endpoints:
     `Authorization: Bearer <token>`
     """
-    body = await request.json()
-    email = body.get("email")
-    passcode = body.get("passcode")
-    
-    if not email or not passcode:
-        raise HTTPException(status_code=400, detail="Email and passcode required")
-    
-    admin = db.query(models.Admin).filter(models.Admin.email == email).first()
-    if not admin or not verify_password(passcode, admin.passcode):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    access_token = create_access_token(data={
-        "sub": admin.email,
-        "admin_id": str(admin.id),  # Convert UUID to string for JWT
-        "role": "admin"
-    })
-    return {
-        "access_token": access_token, 
-        "token_type": "bearer",
-        "admin_id": str(admin.id)
-    }
+    try:
+        body = await request.json()
+        email = body.get("email")
+        passcode = body.get("passcode")
+        
+        print(f"Login attempt for: {email}")  # Debug log
+        
+        admin = db.query(models.Admin).filter(models.Admin.email == email).first()
+        if not admin or not verify_password(passcode, admin.passcode):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+        access_token = create_access_token(data={"sub": admin.email})
+        print(f"Generated token for {email}: {access_token}")  # Debug log
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer"
+        }
+    except Exception as e:
+        print(f"Login error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/create", response_model=schemas.Admin)
 async def create_admin(request: Request, db: Session = Depends(get_db)):

@@ -2,9 +2,12 @@ from fastapi import FastAPI
 from app.api.v1.endpoints import admin, attendant, voucher, company, branch
 from app.core.config import settings
 from app.core.database import engine
+from fastapi.middleware.cors import CORSMiddleware
 from app.models import models
 
 models.Base.metadata.create_all(bind=engine)
+
+
 
 app = FastAPI(
     title="Voucher Management System",
@@ -60,6 +63,14 @@ tags_metadata = [
         "description": "Voucher creation, verification, and usage operations.",
     },
 ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Your frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.openapi_tags = tags_metadata
 
