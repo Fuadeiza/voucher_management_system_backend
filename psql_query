@@ -1,0 +1,67 @@
+-- Core tables for the voucher management system
+
+CREATE TYPE voucher_status AS ENUM ('active', 'used', 'invalid');
+
+CREATE TABLE branch (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    location VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE admin (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    passcode VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE company (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    acronym VARCHAR(10) NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE attendant (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    passcode VARCHAR(255) NOT NULL,
+    branch_id INTEGER NOT NULL,
+    created_by INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (branch_id) REFERENCES branch(id),
+    FOREIGN KEY (created_by) REFERENCES admin(id)
+);
+
+CREATE TABLE voucher (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(20) UNIQUE NOT NULL,
+    company_id INTEGER NOT NULL,
+    status voucher_status DEFAULT 'active',
+    used_by INTEGER,
+    used_at TIMESTAMP WITH TIME ZONE,
+    created_by INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (company_id) REFERENCES company(id),
+    FOREIGN KEY (used_by) REFERENCES attendant(id),
+    FOREIGN KEY (created_by) REFERENCES admin(id)
+);
+
+-- Indexes
+CREATE INDEX idx_voucher_code ON voucher(code);
+CREATE INDEX idx_voucher_company ON voucher(company_id);
+CREATE INDEX idx_voucher_status ON voucher(status);
+
+-- Function to cleanup invalid vouchers
+CREATE OR REPLACE FUNCTION cleanup_invalid_vouchers()
+RETURNS void AS $$
+BEGIN
+    DELETE FROM voucher 
+    WHERE status = 'invalid' 
+    AND created_at < CURRENT_TIMESTAMP - INTERVAL '6 months';
+END;
+$$ LANGUAGE plpgsql;
+
+-- Schedule cleanup job (requires pg_cron extension)
+-- SELECT cron.schedule('0 0 * * *', $$SELECT cleanup_invalid_vouchers()$$);
